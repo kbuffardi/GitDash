@@ -97,15 +97,13 @@ def classify_teams(survey_data_path):
         
         cluster_labels[cluster] = label
 
-    # Add classification labels
+
     team_metrics['classification'] = team_metrics['cluster'].map(cluster_labels)
     
     return team_metrics
 
 def visualize_classifications(team_metrics):
-    """
-    Create a visualization of the team classifications using PCA for dimensionality reduction.
-    """
+
 
     features = team_metrics[['conflict_score', 'collaboration_score', 'commitment_score']]
 
@@ -120,9 +118,7 @@ def visualize_classifications(team_metrics):
     return viz_data
 
 def plot_team_classifications(viz_data):
-    """
-    Create a scatter plot of team classifications using matplotlib.
-    """
+
     colors = {
         'High-performing': 'green',
         'Struggling': 'red',
@@ -169,7 +165,7 @@ if __name__ == "__main__":
 
     print("\nTeam Classifications:")
     print(team_classifications[['classification']])
-
+    team_classifications[['classification']].to_csv('team_classifications.csv')
     viz_data = visualize_classifications(team_classifications)
     plot_team_classifications(viz_data)
     
