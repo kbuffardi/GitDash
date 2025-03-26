@@ -1,0 +1,10 @@
+pandas
+transformers
+torch
+sentence-transformers
+scikit-learn
+matplotlib
+seaborn
+faiss-cpu
+streamlit
+plotly
