@@ -2,365 +2,664 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from matplotlib.colors import LinearSegmentedColormap
+from datetime import datetime
+
+
+# Set page config for a cleaner look
+st.set_page_config(layout="wide", page_title="Team Contribution Dashboard", page_icon="📊")
+
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main .block-container {padding-top: 2rem;}
+    h1, h2, h3 {margin-top: 1rem; margin-bottom: 0.5rem;}
+    .metric-card {background-color: #f9f9f9; border-radius: 0.5rem; padding: 1rem; box-shadow: 0 0 10px rgba(0,0,0,0.1);}
+    .status-active {background-color: #d4edda; color: #155724; border-radius: 0.3rem; padding: 0.5rem; box-shadow: 0 0 5px rgba(0,0,0,0.05);}
+    .status-inactive {background-color: #f8d7da; color: #721c24; border-radius: 0.3rem; padding: 0.5rem; box-shadow: 0 0 5px rgba(0,0,0,0.05);}
+    .classification-high {background-color: #d1e7dd; color: #0f5132; border-radius: 0.5rem; padding: 1rem; box-shadow: 0 0 10px rgba(0,0,0,0.1); text-align: center;}
+    .classification-balanced {background-color: #fff3cd; color: #664d03; border-radius: 0.5rem; padding: 1rem; box-shadow: 0 0 10px rgba(0,0,0,0.1); text-align: center;}
+    .classification-struggling {background-color: #f8d7da; color: #842029; border-radius: 0.5rem; padding: 1rem; box-shadow: 0 0 10px rgba(0,0,0,0.1); text-align: center;}
+    .classification-icon {font-size: 2rem; margin-bottom: 0.5rem;}
+    .classification-label {font-size: 1.5rem; font-weight: bold; margin: 0.5rem 0;}
+    .classification-desc {font-size: 0.9rem;}
+</style>
+""", unsafe_allow_html=True)
 
 # Load data
 @st.cache_data
 def load_data():
-    repo_data = pd.read_csv("data/coded_collated_data.csv")
+    repo_data = pd.read_csv("data/coded_collated_data_t.csv")
     survey_data = pd.read_csv("data/coded_survey_anonymous.csv")
-    return repo_data, survey_data
+    classification_data = pd.read_csv("team_classifications.csv")
+    return repo_data, survey_data, classification_data
 
-repo_data, survey_data = load_data()
+repo_data, survey_data, classification_data = load_data()
 
 # Extract unique teams, semesters, years, and weeks
 teams = repo_data["Your Team"].unique()
-semesters = repo_data["Semester"].unique()
-years = repo_data["Year"].unique()
+teams.sort()
 weeks = sorted(repo_data["week"].dropna().unique().astype(int))
 
-# Streamlit UI
+# Sidebar with cleaner organization
+with st.sidebar:
+    st.image("https://via.placeholder.com/150x60?text=TeamTrack", width=150)
+    st.title("Filters")
+    
+    # Filter by team
+    selected_team = st.selectbox("Select a Team", teams)
+    team_data = repo_data[repo_data["Your Team"] == selected_team]
+    
+    # Get team classification
+    team_classification = classification_data[classification_data["Your Team"] == selected_team]["classification"].values[0] if len(classification_data[classification_data["Your Team"] == selected_team]) > 0 else "Unknown"
+    
+    # Get semester and year for display purposes only
+    if not team_data.empty:
+        # Just take the most recent semester and year for display
+        selected_semester = team_data["Semester"].iloc[0]
+        selected_year = team_data["Year"].iloc[0]
+    else:
+        selected_semester = "Unknown"
+        selected_year = "Unknown"
+    
+    # Filter by week with improved UI
+    team_weeks = sorted(team_data["week"].dropna().unique().astype(int))
+    if len(team_weeks) > 0:
+        week_options = ["All Weeks"] + [str(w) for w in team_weeks]
+        selected_week = st.selectbox("Select a Week", week_options)
+        
+        if selected_week == "All Weeks":
+            team_data_week = team_data
+        else:
+            team_data_week = team_data[team_data["week"] == int(selected_week)]
+    else:
+        selected_week = None
+        team_data_week = pd.DataFrame()
+        
+    # Add a Member filter in sidebar
+    all_team_members = set(team_data["Author"].unique())
+    member_options = ["All Members"] + sorted(all_team_members)
+    selected_member = st.selectbox("Select a Team Member", member_options)
+    
+    # Add view toggle for consolidated UI
+    st.divider()
+    st.subheader("View Options")
+    show_activity_log = st.checkbox("Show Activity Log", value=False)
+    show_member_details = st.checkbox("Show Member Details", value=True)
+    show_trends = st.checkbox("Show Activity Trends", value=True)
+    show_classification = st.checkbox("Show Classification Details", value=True)
+
+# Display team overview with more modern design
 st.title("Team Contribution Dashboard")
-st.sidebar.header("Filters")
+st.title(f"Team {selected_team} Dashboard")
+st.subheader(f"{selected_semester} {selected_year}")
 
-# Filter by team
-selected_team = st.sidebar.selectbox("Select a Team", teams)
-team_data = repo_data[repo_data["Your Team"] == selected_team]
+# Display the classification prominently at the top
+if team_classification != "Unknown":
+    classification_colors = {
+        "High-performing": "classification-high",
+        "Balanced": "classification-balanced",
+        "Struggling": "classification-struggling"
+    }
+    
+    classification_icons = {
+        "High-performing": "🏆",
+        "Balanced": "⚖️",
+        "Struggling": "🔧"
+    }
+    
+    classification_descriptions = {
+        "High-performing": "Team demonstrates consistent contributions, balanced workload, and high quality interactions.",
+        "Balanced": "Team shows steady progress with room for improvement in consistency or collaboration.",
+        "Struggling": "Team needs attention in activity levels, member engagement, or coordination."
+    }
+    
+    st.markdown(f"""
+    <div class="{classification_colors.get(team_classification, 'metric-card')}">
+        <div class="classification-icon">{classification_icons.get(team_classification, '📊')}</div>
+        <div class="classification-label">Classification: {team_classification}</div>
+        <div class="classification-desc">{classification_descriptions.get(team_classification, '')}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Get unique semesters and years for the selected team
-team_semesters = team_data["Semester"].unique()
-team_years = team_data["Year"].unique()
-
-# Filter by semester and year if multiple options exist
-if len(team_semesters) > 1 or len(team_years) > 1:
-    selected_semester = st.sidebar.selectbox("Select a Semester", team_semesters)
-    selected_year = st.sidebar.selectbox("Select a Year", team_years)
-    team_data = team_data[(team_data["Semester"] == selected_semester) & 
-                          (team_data["Year"] == selected_year)]
-else:
-    selected_semester = team_semesters[0] if len(team_semesters) > 0 else None
-    selected_year = team_years[0] if len(team_years) > 0 else None
-
-# Filter by week
-team_weeks = sorted(team_data["week"].dropna().unique().astype(int))
-if len(team_weeks) > 0:
-    selected_week = st.sidebar.selectbox("Select a Week", team_weeks)
-    team_data_week = team_data[team_data["week"] == selected_week]
-else:
-    selected_week = None
-    team_data_week = pd.DataFrame()
-
-# Display team overview
-st.header(f"Team {selected_team} - {selected_semester} {selected_year}")
 
 # Compute overall team metrics
 num_commits = team_data[team_data["Action"] == "commit"].shape[0]
 num_issues = team_data[team_data["Action"] == "issue"].shape[0]
 num_prs = team_data[team_data["Action"] == "pull_request"].shape[0]
 num_reviews = team_data[team_data["Action"] == "code_review"].shape[0]
-num_comments = team_data[team_data["Action"] == "comment"].shape[0]  # Add comments tracking
+num_comments = team_data[team_data["Action"] == "comment"].shape[0]
 
-# Create columns for metrics
-col1, col2, col3, col4, col5 = st.columns(5)  # Change to 5 columns
+# Better metrics display with improved alignment
+col1, col2, col3, col4, col5 = st.columns(5)
+
+# Add custom CSS for better metric alignment
+st.markdown("""
+<style>
+    .metric-card {
+        background-color: #f9f9f9;
+        border-radius: 0.5rem;
+        padding: 1.2rem 0.8rem;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        text-align: center;
+        height: 100%;
+    }
+    .metric-icon {
+        font-size: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .metric-value {
+        font-size: 2rem;
+        font-weight: bold;
+        margin: 0.5rem 0;
+    }
+    .metric-label {
+        font-size: 1rem;
+        color: #666;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 with col1:
-    st.metric("Total Commits", num_commits)
+    st.markdown("""
+    <div class="metric-card">
+        <div class="metric-icon">📝</div>
+        <div class="metric-value">{}</div>
+        <div class="metric-label">Commits</div>
+    </div>
+    """.format(num_commits), unsafe_allow_html=True)
+
 with col2:
-    st.metric("Total Issues", num_issues)
+    st.markdown("""
+    <div class="metric-card">
+        <div class="metric-icon">🔍</div>
+        <div class="metric-value">{}</div>
+        <div class="metric-label">Issues</div>
+    </div>
+    """.format(num_issues), unsafe_allow_html=True)
+
 with col3:
-    st.metric("Pull Requests", num_prs)
+    st.markdown("""
+    <div class="metric-card">
+        <div class="metric-icon">🔄</div>
+        <div class="metric-value">{}</div>
+        <div class="metric-label">Pull Requests</div>
+    </div>
+    """.format(num_prs), unsafe_allow_html=True)
+
 with col4:
-    st.metric("Code Reviews", num_reviews)
+    st.markdown("""
+    <div class="metric-card">
+        <div class="metric-icon">✅</div>
+        <div class="metric-value">{}</div>
+        <div class="metric-label">Code Reviews</div>
+    </div>
+    """.format(num_reviews), unsafe_allow_html=True)
+
 with col5:
-    st.metric("Comments", num_comments)  # Add comments metric
+    st.markdown("""
+    <div class="metric-card">
+        <div class="metric-icon">💬</div>
+        <div class="metric-value">{}</div>
+        <div class="metric-label">Comments</div>
+    </div>
+    """.format(num_comments), unsafe_allow_html=True)
 
 # Get all team members from entire dataset for selected team/semester/year
 all_team_members = set(team_data["Author"].unique())
 
-# Show week specific data
-if selected_week is not None and not team_data_week.empty:
-    st.header(f"Week {selected_week} Contributions")
-    
-    # Get active team members from the selected week
-    active_members = set(team_data_week["Author"].unique())
-    
-    # Display week metrics
-    week_commits = team_data_week[team_data_week["Action"] == "commit"].shape[0]
-    week_issues = team_data_week[team_data_week["Action"] == "issue"].shape[0]
-    week_prs = team_data_week[team_data_week["Action"] == "pull_request"].shape[0]
-    week_reviews = team_data_week[team_data_week["Action"] == "code_review"].shape[0]
-    week_comments = team_data_week[team_data_week["Action"] == "comment"].shape[0]  # Add comments tracking
-    
-    # Create columns for week metrics
-    wcol1, wcol2, wcol3, wcol4, wcol5 = st.columns(5)  # Change to 5 columns
-    with wcol1:
-        st.metric("Week Commits", week_commits)
-    with wcol2:
-        st.metric("Week Issues", week_issues)
-    with wcol3:
-        st.metric("Week PRs", week_prs)
-    with wcol4:
-        st.metric("Week Reviews", week_reviews)
-    with wcol5:
-        st.metric("Week Comments", week_comments)  # Add comments metric
-    
-    # Show individual member contributions with color coding
-    st.subheader("Team Member Contributions")
-    
-    # Create a DataFrame for all team members (active and inactive)
-    member_contributions = []
-    
-    for member in all_team_members:
-        # Check if the member was active in the selected week
-        is_active = member in active_members
+# Create tabs for better organization of content
+tab1, tab2, tab3 = st.tabs(["Weekly Activity", "Team Analysis", "Member Insights"])
+
+with tab1:
+    # Show week specific data in a cleaner layout
+    if selected_week is not None and not team_data_week.empty and selected_week != "All Weeks":
+        st.header(f"Week {selected_week} Contributions")
         
-        # Get contributions for active members
-        if is_active:
-            member_data = team_data_week[team_data_week["Author"] == member]
-            commits = member_data[member_data["Action"] == "commit"].shape[0]
-            issues = member_data[member_data["Action"] == "issue"].shape[0]
-            prs = member_data[member_data["Action"] == "pull_request"].shape[0]
-            reviews = member_data[member_data["Action"] == "code_review"].shape[0]
-            comments = member_data[member_data["Action"] == "comment"].shape[0]  # Add comments tracking
-        else:
-            commits = 0
-            issues = 0
-            prs = 0
-            reviews = 0
-            comments = 0  # Initialize comments to 0 for inactive members
+        # Get active team members from the selected week
+        active_members = set(team_data_week["Author"].unique())
         
-        # Add status color indicator
-        status = "🟢 Active" if is_active else "🔴 Inactive"
+        # Display week metrics in a more compact way
+        week_metrics = {
+            "Commits": team_data_week[team_data_week["Action"] == "commit"].shape[0],
+            "Issues": team_data_week[team_data_week["Action"] == "issue"].shape[0],
+            "PRs": team_data_week[team_data_week["Action"] == "pull_request"].shape[0],
+            "Reviews": team_data_week[team_data_week["Action"] == "code_review"].shape[0],
+            "Comments": team_data_week[team_data_week["Action"] == "comment"].shape[0]
+        }
         
-        member_contributions.append({
-            "Team Member": member,
-            "Status": status,
-            "Commits": commits,
-            "Issues": issues,
-            "Pull Requests": prs,
-            "Code Reviews": reviews,
-            "Comments": comments,  # Add comments to contributions
-            "Total Actions": commits + issues + prs + reviews + comments,  # Include comments in total
-            "Active": is_active  # Used for sorting
-        })
-    
-    member_df = pd.DataFrame(member_contributions)
-    
-    # Sort by activity status and then by total actions
-    member_df = member_df.sort_values(by=["Active", "Total Actions"], ascending=[False, False])
-    
-    if not member_df.empty:
-        # Create a styled dataframe with colored rows based on activity
-        st.markdown("### Team Member Status")
+        # Use plotly for better interactive charts
+        fig = go.Figure(data=[
+            go.Bar(
+                x=list(week_metrics.keys()),
+                y=list(week_metrics.values()),
+                marker_color=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+            )
+        ])
+        fig.update_layout(
+            title="Weekly Activity Breakdown",
+            xaxis_title="Activity Type",
+            yaxis_title="Count",
+            height=400
+        )
+        st.plotly_chart(fig, use_container_width=True)
         
-        # Create a colorful box display of active/inactive members
-        cols = st.columns(4)
-        for i, (_, row) in enumerate(member_df.iterrows()):
-            col_idx = i % 4
-            with cols[col_idx]:
-                if row["Active"]:
-                    st.success(f"**{row['Team Member']}**: {row['Total Actions']} actions")
+        # Show a single visualization for team member status instead of redundant ones
+        if show_member_details:
+            st.subheader("Team Member Status & Contributions")
+            
+            # Create a DataFrame for all team members (active and inactive)
+            member_contributions = []
+            
+            for member in all_team_members:
+                # Check if the member was active in the selected week
+                is_active = member in active_members
+                
+                # Get contributions for active members
+                if is_active:
+                    member_data = team_data_week[team_data_week["Author"] == member]
+                    commits = member_data[member_data["Action"] == "commit"].shape[0]
+                    issues = member_data[member_data["Action"] == "issue"].shape[0]
+                    prs = member_data[member_data["Action"] == "pull_request"].shape[0]
+                    reviews = member_data[member_data["Action"] == "code_review"].shape[0]
+                    comments = member_data[member_data["Action"] == "comment"].shape[0]
+                    last_action_row = member_data.sort_values("Timestamp", ascending=False).iloc[0]
+                    last_action_date = last_action_row["Timestamp"]
+                    if pd.notnull(last_action_date):
+                        last_action_date = pd.to_datetime(last_action_date)
+                        last_action_days_ago = (datetime.now() - last_action_date).days
+                    else:
+                        last_action_days_ago = "N/A"
+                    
                 else:
-                    st.error(f"**{row['Team Member']}**: No activity")
-        
-        # Show detailed table
-        st.markdown("### Detailed Contribution Table")
-        display_df = member_df[["Team Member", "Status", "Commits", "Issues", "Pull Requests", "Code Reviews", "Comments", "Total Actions"]]  # Add comments to display
-        st.dataframe(display_df.set_index("Team Member"))
-        
-        # Create visualizations for active members only
-        active_df = member_df[member_df["Active"]]
-        if not active_df.empty:
-            st.subheader("Active Member Contributions")
-            
-            # Create bar chart for total actions
-            fig, ax = plt.subplots(figsize=(10, 6))
-            
-            # Plot with green color for active members
-            sns.barplot(x="Team Member", y="Total Actions", data=active_df, 
-                        color="green", ax=ax)
-            plt.xticks(rotation=45)
-            plt.title("Total Contributions by Active Members")
-            st.pyplot(fig)
-            
-            # Create breakdown of actions
-            st.subheader("Breakdown by Action Type")
-            action_data = []
-            for _, row in active_df.iterrows():
-                member = row["Team Member"]
+                    commits = issues = prs = reviews = comments = 0
                 
-                # Add each action type to the data
-                if row["Commits"] > 0:
-                    action_data.append({"Team Member": member, "Action": "Commits", "Count": row["Commits"]})
-                if row["Issues"] > 0:
-                    action_data.append({"Team Member": member, "Action": "Issues", "Count": row["Issues"]})
-                if row["Pull Requests"] > 0:
-                    action_data.append({"Team Member": member, "Action": "Pull Requests", "Count": row["Pull Requests"]})
-                if row["Code Reviews"] > 0:
-                    action_data.append({"Team Member": member, "Action": "Code Reviews", "Count": row["Code Reviews"]})
-                if row["Comments"] > 0:  # Add comments to breakdown
-                    action_data.append({"Team Member": member, "Action": "Comments", "Count": row["Comments"]})
-            
-            action_df = pd.DataFrame(action_data)
-            if not action_df.empty:
-                fig2, ax2 = plt.subplots(figsize=(12, 6))
-                sns.barplot(x="Team Member", y="Count", hue="Action", data=action_df, ax=ax2)
-                plt.xticks(rotation=45)
-                plt.title("Contribution Breakdown by Type")
-                plt.legend(title="Action Type")
-                st.pyplot(fig2)
-                
-                # Create a pie chart of action types
-                action_totals = action_df.groupby("Action")["Count"].sum().reset_index()
-                fig3, ax3 = plt.subplots(figsize=(8, 8))
-                plt.pie(action_totals["Count"], labels=action_totals["Action"], autopct='%1.1f%%', 
-                      startangle=90, shadow=True)
-                plt.title('Distribution of Activity Types')
-                plt.axis('equal')
-                st.pyplot(fig3)
-        
-        # Create visualization of active vs inactive members
-        activity_counts = member_df["Status"].value_counts()
-        
-        fig4, ax4 = plt.subplots(figsize=(8, 8))
-        colors = ['#ff6b6b', '#51cf66']  # Red for inactive, Green for active
-        plt.pie(activity_counts, labels=activity_counts.index, autopct='%1.1f%%', 
-                colors=colors, startangle=90, shadow=True)
-        plt.title('Team Member Activity Status')
-        plt.axis('equal')
-        st.pyplot(fig4)
-    else:
-        st.write("No member data found for this week.")
-else:
-    st.info("Please select a week to view team member contributions.")
-
-# Show detailed activity in selected week
-if selected_week is not None and not team_data_week.empty:
-    st.header("Detailed Activity Log")
-    
-    # Select columns to display
-    display_columns = ["Author", "Action", "Repo_ID", "Request_Status", "Close_date"]
-    st.dataframe(team_data_week[display_columns])
-
-# Add contribution trend over time for each activity type
-st.header("Activity Trends Over Time")
-
-# Check if there's data for the trend
-if not team_data.empty and "week" in team_data.columns:
-    # Group data by week and action type
-    weekly_activity = team_data.groupby(["week", "Action"]).size().reset_index(name="Count")
-    
-    # Filter to only weeks with data
-    if not weekly_activity.empty:
-        # Plot trend for each action type
-        fig5, ax5 = plt.subplots(figsize=(12, 6))
-        action_types = ["commit", "issue", "pull_request", "code_review", "comment"]  # Add comment to action types
-        for action in action_types:
-            action_data = weekly_activity[weekly_activity["Action"] == action]
-            if not action_data.empty:
-                plt.plot(action_data["week"], action_data["Count"], marker='o', label=action)
-        
-        plt.title("Weekly Activity by Type")
-        plt.xlabel("Week")
-        plt.ylabel("Number of Actions")
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.7)
-        st.pyplot(fig5)
-
-# Add team member activity heatmap over weeks
-st.header("Team Member Activity Over Weeks")
-
-# Check if there's enough data for the heatmap
-if not team_data.empty and "week" in team_data.columns and len(all_team_members) > 0:
-    # Create a heatmap of activity by member and week
-    st.subheader("Activity Heatmap (Green = Active, Red = Inactive)")
-    
-    # Get all weeks for selected team/semester/year
-    all_weeks = sorted(team_data["week"].dropna().unique().astype(int))
-    
-    # Create a matrix of activity (1 for active, 0 for inactive)
-    activity_data = []
-    
-    for member in all_team_members:
-        member_weeks = {}
-        
-        # Default all weeks to inactive
-        for week in all_weeks:
-            member_weeks[week] = 0
-        
-        # Mark weeks with activity
-        member_activity = team_data[team_data["Author"] == member]
-        active_weeks = member_activity["week"].dropna().unique().astype(int)
-        
-        for week in active_weeks:
-            member_weeks[week] = 1
-        
-        # Add row to activity data
-        row_data = {"Member": member}
-        row_data.update({f"Week {week}": member_weeks[week] for week in all_weeks})
-        activity_data.append(row_data)
-    
-    activity_df = pd.DataFrame(activity_data)
-    
-    # Create a pivot table for the heatmap
-    if len(all_weeks) > 0:
-        # Create the heatmap table
-        st.markdown("### Weekly Activity by Team Member")
-        heatmap_table = activity_df.set_index("Member")
-        
-        # Style the dataframe with color coding
-        def color_activity(val):
-            color = 'background-color: #51cf66' if val == 1 else 'background-color: #ff6b6b'
-            return color
-        
-        styled_heatmap = heatmap_table.style.applymap(color_activity)
-        st.dataframe(styled_heatmap)
-        
-        # Show actual heatmap visualization
-        week_cols = [col for col in activity_df.columns if col.startswith("Week")]
-        if len(week_cols) > 0:
-            fig6, ax6 = plt.subplots(figsize=(12, len(all_team_members) * 0.8 + 2))
-            heatmap_data = activity_df[week_cols].set_index(activity_df["Member"])
-            sns.heatmap(heatmap_data, cmap=["#ff6b6b", "#51cf66"], cbar=False, 
-                       linewidths=.5, yticklabels=True, ax=ax6)
-            plt.title("Team Member Activity by Week (Green = Active, Red = Inactive)")
-            plt.tight_layout()
-            st.pyplot(fig6)
-            
-            # Create a detailed heatmap showing activity types by week
-            st.subheader("Activity Types by Week")
-            
-            # Prepare data for activity type heatmap
-            type_data = []
-            
-            # For each week and activity type, count actions
-            for week in all_weeks:
-                week_data = team_data[team_data["week"] == week]
-                commits = week_data[week_data["Action"] == "commit"].shape[0]
-                issues = week_data[week_data["Action"] == "issue"].shape[0]
-                prs = week_data[week_data["Action"] == "pull_request"].shape[0]
-                reviews = week_data[week_data["Action"] == "code_review"].shape[0]
-                comments = week_data[week_data["Action"] == "comment"].shape[0]  # Add comments tracking
-                
-                type_data.append({
-                    "Week": f"Week {week}",
+                member_contributions.append({
+                    "Team Member": member,
+                    "Status": "Active" if is_active else "Inactive",
                     "Commits": commits,
                     "Issues": issues,
                     "Pull Requests": prs,
                     "Code Reviews": reviews,
-                    "Comments": comments  # Add comments to heatmap
+                    "Comments": comments,
+                    "Total Actions": commits + issues + prs + reviews + comments,
+                    "Last Action Days Ago" : last_action_days_ago if is_active else "N/A",
+                    "Active": is_active
                 })
             
-            type_df = pd.DataFrame(type_data).set_index("Week")
+            member_df = pd.DataFrame(member_contributions)
             
-            # Create heatmap of activity types
-            if not type_df.empty:
-                fig7, ax7 = plt.subplots(figsize=(12, 4))
-                sns.heatmap(type_df, annot=True, fmt="d", cmap="YlGnBu", 
-                           linewidths=.5, ax=ax7)
-                plt.title("Activity Types by Week")
-                plt.tight_layout()
-                st.pyplot(fig7)
+            # Sort by activity status and then by total actions
+            member_df = member_df.sort_values(by=["Active", "Total Actions"], ascending=[False, False])
+            
+            if not member_df.empty:
+                # Create two columns for status cards and breakdown chart
+                col1, col2 = st.columns([1, 2])
+                
+                with col1:
+                    # Activity counts for a clear single visualization
+                    active_count = member_df[member_df["Active"]].shape[0]
+                    inactive_count = member_df[~member_df["Active"]].shape[0]
+                    
+                    # Create a donut chart with plotly for better aesthetics
+                    fig = go.Figure(data=[go.Pie(
+                        labels=["Active", "Inactive"],
+                        values=[active_count, inactive_count],
+                        hole=.5,
+                        marker_colors=['#2ecc71', '#e74c3c']
+                    )])
+                    fig.update_layout(
+                        title_text="Member Activity Status",
+                        showlegend=True,
+                        height=300
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Display member status in cards
+                    st.markdown("### Team Members")
+                    active_df = member_df[member_df["Active"]]
+                    inactive_df = member_df[~member_df["Active"]]
+                    
+                    st.markdown("#### 🟢 Active")
+                    for _, row in active_df.iterrows():
+                        st.markdown(f'<div class="status-active">{row["Team Member"]}: {row["Total Actions"]} actions</div>',
+                                   unsafe_allow_html=True)
+                    
+                    st.markdown("#### 🔴 Inactive")
+                    for _, row in inactive_df.iterrows():
+                        st.markdown(f'<div class="status-inactive">{row["Team Member"]}</div>',
+                                  unsafe_allow_html=True)
+                
+                with col2:
+                    # Create a unified visualization for active members
+                    active_members_df = member_df[member_df["Active"]].copy()
+                    if not active_members_df.empty:
+                        # Create a stacked bar chart with plotly for action breakdown
+                        active_members_df = active_members_df.sort_values("Total Actions", ascending=False)
+                        
+                        fig = go.Figure()
+                        
+                        # Add traces, one for each action type
+                        fig.add_trace(go.Bar(
+                            y=active_members_df["Team Member"],
+                            x=active_members_df["Commits"],
+                            name="Commits",
+                            orientation='h',
+                            marker=dict(color='rgba(31, 119, 180, 0.8)')
+                        ))
+                        fig.add_trace(go.Bar(
+                            y=active_members_df["Team Member"],
+                            x=active_members_df["Issues"],
+                            name="Issues",
+                            orientation='h',
+                            marker=dict(color='rgba(255, 127, 14, 0.8)')
+                        ))
+                        fig.add_trace(go.Bar(
+                            y=active_members_df["Team Member"],
+                            x=active_members_df["Pull Requests"],
+                            name="Pull Requests",
+                            orientation='h',
+                            marker=dict(color='rgba(44, 160, 44, 0.8)')
+                        ))
+                        fig.add_trace(go.Bar(
+                            y=active_members_df["Team Member"],
+                            x=active_members_df["Code Reviews"],
+                            name="Code Reviews",
+                            orientation='h',
+                            marker=dict(color='rgba(214, 39, 40, 0.8)')
+                        ))
+                        fig.add_trace(go.Bar(
+                            y=active_members_df["Team Member"],
+                            x=active_members_df["Comments"],
+                            name="Comments",
+                            orientation='h',
+                            marker=dict(color='rgba(148, 103, 189, 0.8)')
+                        ))
+                        
+                        fig.update_layout(
+                            barmode='stack',
+                            title="Activity Breakdown by Member",
+                            height=400,
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=1.02,
+                                xanchor="right",
+                                x=1
+                            )
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                # Show detailed table with expandable rows for better space usage
+                with st.expander("View Detailed Contribution Table"):
+                    display_df = member_df[["Team Member", "Status", "Commits", "Issues", "Pull Requests", "Code Reviews", "Comments", "Total Actions","Last Action Days Ago"]]
+                    st.dataframe(display_df.set_index("Team Member"))
+
+with tab2:
+    if show_trends:
+        st.header("Team Activity Analysis")
+        
+        # Activity trends over time - more interactive and visually appealing
+        if not team_data.empty and "week" in team_data.columns:
+            # Group data by week and action type
+            weekly_activity = team_data.groupby(["week", "Action"]).size().reset_index(name="Count")
+            
+            if not weekly_activity.empty:
+                # Use Plotly for interactive line chart
+                fig = px.line(
+                    weekly_activity, 
+                    x="week", 
+                    y="Count", 
+                    color="Action",
+                    markers=True,
+                    title="Weekly Activity Trends",
+                    labels={"week": "Week", "Count": "Number of Actions", "Action": "Activity Type"}
+                )
+                fig.update_layout(height=500)
+                st.plotly_chart(fig, use_container_width=True)
+        
+        # Team member activity heatmap - simplified and more effective
+        if not team_data.empty and "week" in team_data.columns and len(all_team_members) > 0:
+            st.subheader("Team Activity Patterns")
+            
+            # Combine the two heatmaps into one meaningful visualization
+            col1, col2 = st.columns([3, 2])
+            
+            with col1:
+                # Create a heatmap of activity by member and week
+                all_weeks = sorted(team_data["week"].dropna().unique().astype(int))
+                activity_data = []
+                
+                for member in all_team_members:
+                    member_weeks = {}
+                    
+                    # Default all weeks to inactive
+                    for week in all_weeks:
+                        member_weeks[week] = 0
+                    
+                    # Count actual activities per week
+                    member_activity = team_data[team_data["Author"] == member]
+                    week_counts = member_activity.groupby("week").size()
+                    
+                    for week, count in week_counts.items():
+                        member_weeks[week] = count
+                    
+                    # Add row to activity data
+                    row_data = {"Member": member}
+                    row_data.update({f"Week {week}": member_weeks[week] for week in all_weeks})
+                    activity_data.append(row_data)
+                
+                activity_df = pd.DataFrame(activity_data)
+                
+                if len(all_weeks) > 0 and not activity_df.empty:
+                    # Create activity heatmap with intensity instead of binary
+                    week_cols = [col for col in activity_df.columns if col.startswith("Week")]
+                    heatmap_data = activity_df[week_cols].set_index(activity_df["Member"])
+                    
+                    # Create a custom colormap from red to green
+                    colors = [(0.8, 0.2, 0.2), (1.0, 1.0, 0.6), (0.2, 0.8, 0.2)]
+                    cmap = LinearSegmentedColormap.from_list("activity_cmap", colors, N=100)
+                    
+                    fig, ax = plt.subplots(figsize=(12, len(all_team_members) * 0.8 + 2))
+                    sns.heatmap(heatmap_data, cmap=cmap, annot=True, fmt="d",
+                              linewidths=.5, yticklabels=True, ax=ax)
+                    plt.title("Team Activity Intensity by Week")
+                    plt.tight_layout()
+                    st.pyplot(fig)
+            
+            with col2:
+                # Create a summary of activity types by week
+                if len(all_weeks) > 0:
+                    # Prepare data for activity type summary - use a donut chart for better visualization
+                    action_counts = team_data["Action"].value_counts()
+                    
+                    # Create a donut chart
+                    fig = go.Figure(data=[go.Pie(
+                        labels=action_counts.index,
+                        values=action_counts.values,
+                        hole=.4,
+                        marker_colors=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+                    )])
+                    fig.update_layout(
+                        title_text="Overall Activity Distribution",
+                        height=400
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+with tab3:
+    # Member-specific drilldown - more consolidated and visually appealing
+    if selected_member != "All Members":
+        # Filter data for the selected member
+        member_data = team_data[team_data["Author"] == selected_member]
+        
+        if not member_data.empty:
+            st.header(f"{selected_member}'s Contributions")
+            
+            # Display member's overall contributions with visually appealing cards
+            member_metrics = {
+                "📝 Commits": member_data[member_data["Action"] == "commit"].shape[0],
+                "🔍 Issues": member_data[member_data["Action"] == "issue"].shape[0],
+                "🔄 PRs": member_data[member_data["Action"] == "pull_request"].shape[0],
+                "✅ Reviews": member_data[member_data["Action"] == "code_review"].shape[0],
+                "💬 Comments": member_data[member_data["Action"] == "comment"].shape[0]
+            }
+            
+            cols = st.columns(5)
+            metrics = [
+                ("📝 Commits", member_metrics["📝 Commits"]),
+                ("🔍 Issues", member_metrics["🔍 Issues"]), 
+                ("🔄 PRs", member_metrics["🔄 PRs"]),
+                ("✅ Reviews", member_metrics["✅ Reviews"]),
+                ("💬 Comments", member_metrics["💬 Comments"])
+            ]
+
+            for i, (label, value) in enumerate(metrics):
+                with cols[i]:
+                    icon, text = label.split(" ", 1)
+                    st.markdown(f"""
+                        <div class='metric-card'>
+                        <div class='metric-icon'>{icon}</div>
+                        <div class='metric-value'>{value}</div>
+                        <div class='metric-label'>{text}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+            # Create two columns for charts
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Display a timeline of contributions - interactive chart
+                st.subheader("Contribution Timeline")
+                timeline_data = member_data.groupby("week")["Action"].value_counts().unstack(fill_value=0)
+                
+                if not timeline_data.empty:
+                    # Convert to long format for plotly
+                    timeline_long = timeline_data.reset_index().melt(
+                        id_vars="week", 
+                        value_vars=timeline_data.columns,
+                        var_name="Action",
+                        value_name="Count"
+                    )
+                    
+                    # Create interactive area chart
+                    fig = px.area(
+                        timeline_long, 
+                        x="week", 
+                        y="Count", 
+                        color="Action",
+                        title=f"Activity Timeline for {selected_member}",
+                        labels={"week": "Week", "Count": "Number of Actions"}
+                    )
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Visualize the breakdown of actions - more visually appealing
+                st.subheader("Action Breakdown")
+                action_counts = member_data["Action"].value_counts()
+                
+                colors = ['rgba(31, 119, 180, 0.8)', 'rgba(255, 127, 14, 0.8)', 
+                         'rgba(44, 160, 44, 0.8)', 'rgba(214, 39, 40, 0.8)', 
+                         'rgba(148, 103, 189, 0.8)']
+                
+                fig = go.Figure(data=[go.Bar(
+                    x=action_counts.index,
+                    y=action_counts.values,
+                    marker_color=colors[:len(action_counts)]
+                )])
+                
+                fig.update_layout(
+                    title=f"Activity Distribution for {selected_member}",
+                    xaxis_title="Action Type",
+                    yaxis_title="Count",
+                    height=400
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Show detailed activity log if requested
+            if show_activity_log:
+                with st.expander("View Activity Log"):
+                    st.dataframe(
+                        member_data[["week", "Action", "Request_Status", "Timestamp","Message"]].sort_values("week"),
+                        hide_index=True
+                    )
     else:
-        st.write("Not enough weekly data to create activity heatmap.")
-else:
-    st.write("Insufficient data to create the weekly activity visualization.")
+        # Display aggregated view for all members
+        st.header("All Team Members Comparison")
+        
+        # Create a DataFrame for comparative analysis
+        member_summary = []
+        for member in all_team_members:
+            member_data = team_data[team_data["Author"] == member]
+            
+            member_summary.append({
+                "Team Member": member,
+                "Commits": member_data[member_data["Action"] == "commit"].shape[0],
+                "Issues": member_data[member_data["Action"] == "issue"].shape[0],
+                "Pull Requests": member_data[member_data["Action"] == "pull_request"].shape[0],
+                "Code Reviews": member_data[member_data["Action"] == "code_review"].shape[0],
+                "Comments": member_data[member_data["Action"] == "comment"].shape[0],
+                "Total Actions": member_data.shape[0],
+                "Active Weeks": member_data["week"].nunique()
+            })
+        
+        member_summary_df = pd.DataFrame(member_summary).sort_values("Total Actions", ascending=False)
+        
+        # Create an interactive visualization comparing all members
+        fig = px.bar(
+            member_summary_df, 
+            x="Team Member", 
+            y=["Commits", "Issues", "Pull Requests", "Code Reviews", "Comments"],
+            title="Contribution Comparison Across Team",
+            labels={"value": "Number of Actions", "variable": "Action Type"},
+            height=500
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Show the data table with expandable view
+        with st.expander("View Detailed Member Comparison"):
+            st.dataframe(member_summary_df.set_index("Team Member"))
+        
+        # Show consistency analysis - who contributes most consistently
+        st.subheader("Contribution Consistency Analysis")
+        
+        # Calculate consistency metrics
+        if "week" in team_data.columns:
+            total_weeks = team_data["week"].nunique()
+            
+            for i in range(len(member_summary)):
+                if total_weeks > 0:
+                    member_summary[i]["Consistency %"] = round((member_summary[i]["Active Weeks"] / total_weeks) * 100, 1)
+                else:
+                    member_summary[i]["Consistency %"] = 0
+            
+            consistency_df = pd.DataFrame(member_summary)[["Team Member", "Active Weeks", "Consistency %", "Total Actions"]]
+            consistency_df = consistency_df.sort_values("Consistency %", ascending=False)
+            
+            # Create a scatterplot showing consistency vs total contributions
+            fig = px.scatter(
+                consistency_df,
+                x="Consistency %",
+                y="Total Actions",
+                size="Total Actions",
+                color="Consistency %",
+                hover_name="Team Member",
+                text="Team Member",
+                title="Contribution Volume vs Consistency",
+                labels={"Consistency %": "% of Weeks with Activity", "Total Actions": "Total Contributions"},
+                height=500,
+                color_continuous_scale="viridis"
+            )
+            
+            fig.update_traces(textposition='top center')
+            fig.update_layout(xaxis_range=[0, 105])
+            st.plotly_chart(fig, use_container_width=True)
+
+# Footer with information
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666;">
+    Team Contribution Dashboard v2.0 | Updated: March 2025
+</div>
+""", unsafe_allow_html=True)
