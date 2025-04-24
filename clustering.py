@@ -55,6 +55,35 @@ def prepare_survey_data(df):
     
     return team_metrics[['conflict_score', 'collaboration_score', 'commitment_score']]
 
+def compute_cluster_summary_stats(team_metrics):
+    """
+    Compute mean, standard deviation, and Gini index for each classification 
+    across conflict, collaboration, and commitment scores.
+    """
+    def gini(array):
+        array = np.sort(array)
+        n = array.size
+        cumulative = np.cumsum(array)
+        gini_index = (2 * np.sum((np.arange(1, n + 1) * array))) / (n * cumulative[-1]) - (n + 1) / n
+        return gini_index
+
+    dimensions = ['conflict_score', 'collaboration_score', 'commitment_score']
+    classifications = team_metrics['classification'].unique()
+    stats = {}
+
+    for classification in classifications:
+        cluster_data = team_metrics[team_metrics['classification'] == classification]
+        stats[classification] = {}
+        for dim in dimensions:
+            scores = cluster_data[dim].values
+            stats[classification][f'{dim}_mean'] = np.mean(scores)
+            stats[classification][f'{dim}_std'] = np.std(scores)
+            stats[classification][f'{dim}_gini'] = gini(scores)
+
+    cluster_stats_df = pd.DataFrame.from_dict(stats, orient='index')
+    return cluster_stats_df
+
+
 def classify_teams(survey_data_path):
     """
     Classify teams into categories based on survey responses using clustering.
@@ -67,7 +96,7 @@ def classify_teams(survey_data_path):
     scaled_features = scaler.fit_transform(team_metrics)
     
     # Apply KMeans clustering
-    kmeans = KMeans(n_clusters=4, random_state=42)
+    kmeans = KMeans(n_clusters=3, random_state=42)
     clusters = kmeans.fit_predict(scaled_features)
     team_metrics['cluster'] = clusters  # Add cluster assignments
 
@@ -90,8 +119,6 @@ def classify_teams(survey_data_path):
             label = 'High-performing'
         elif (conflict > global_conflict_mean) and (collab < global_collab_mean) and (commit < global_commit_mean):
             label = 'Struggling'
-        elif (conflict < global_conflict_mean) and (collab < global_collab_mean) and (commit > global_commit_mean):
-            label = 'Isolated'
         else:
             label = 'Balanced'
         
@@ -122,7 +149,6 @@ def plot_team_classifications(viz_data):
     colors = {
         'High-performing': 'green',
         'Struggling': 'red',
-        'Isolated': 'orange',
         'Balanced': 'blue'
     }
 
@@ -172,4 +198,8 @@ if __name__ == "__main__":
     print("\nVisualization Data:")
     print(viz_data)
     print("\nVisualization has been saved as 'team_classifications.png'")
+    cluster_summary = compute_cluster_summary_stats(team_classifications)
+    print("\nCluster Summary Statistics:")
+    print(cluster_summary)
+    cluster_summary.to_csv('cluster_summary_statistics.csv') 
 
