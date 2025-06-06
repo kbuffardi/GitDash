@@ -29,7 +29,8 @@ def prepare_survey_data(df):
         'Team members get along well',
         'Team members like each other',
         'Team members like the work that the group does',
-        'Being part of the team allows team members to do enjoyable work'
+        'Being part of the team allows team members to do enjoyable work',
+        
     ]
     
     commitment_questions = [
@@ -134,10 +135,12 @@ def visualize_classifications(team_metrics):
 
     features = team_metrics[['conflict_score', 'collaboration_score', 'commitment_score']]
 
-    pca = PCA(n_components=2)
+    pca = PCA(n_components=3)
     pca_result = pca.fit_transform(StandardScaler().fit_transform(features))
-
-    viz_data = pd.DataFrame(data=pca_result, columns=['PC1', 'PC2'])
+    # Print component loadings
+    loadings = pd.DataFrame(pca.components_, columns=features.columns, index=['PC1', 'PC2','PC3'])
+    print(loadings)
+    viz_data = pd.DataFrame(data=pca_result, columns=['PC1', 'PC2','PC3'])
     viz_data.index = team_metrics.index
     viz_data['classification'] = team_metrics['classification']
     viz_data['team'] = team_metrics.index

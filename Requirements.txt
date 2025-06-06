@@ -8,3 +8,4 @@ seaborn
 faiss-cpu
 streamlit
 plotly
+matplotlib
