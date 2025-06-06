@@ -1,5 +1,7 @@
 
-<h1>Enhancing Software Team Performance: Evaluating RAG for Actionable Insights from Survey and Repository Data</h1>
+<h1>GitDash: A Data-Driven Dashboard for
+Monitoring Team Progress in Software
+Engineering Education</h1>
 
 <h2>Abstract: </h2>
 
