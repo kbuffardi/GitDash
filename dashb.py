@@ -31,7 +31,7 @@ st.markdown("""
 # Load data
 @st.cache_data
 def load_data():
-    repo_data = pd.read_csv("data/coded_collated_data_t.csv")
+    repo_data = pd.read_csv("data/coded_collated_data.csv")
     survey_data = pd.read_csv("data/coded_survey_anonymous.csv")
     classification_data = pd.read_csv("team_classifications.csv")
     return repo_data, survey_data, classification_data
@@ -45,7 +45,6 @@ weeks = sorted(repo_data["week"].dropna().unique().astype(int))
 
 # Sidebar with cleaner organization
 with st.sidebar:
-    st.image("https://via.placeholder.com/150x60?text=TeamTrack", width=150)
     st.title("Filters")
     
     # Filter by team
